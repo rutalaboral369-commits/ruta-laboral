@@ -1,0 +1,6 @@
+Carlos Rodriguez
+Email: carlos.rodriguez@email.com | Tel: +506 8888-9999
+
+Perfil Profesional:
+Ingeniero de Software con experiencia en Node.js, Express y Docker.
+Manejo de bases de datos PostgreSQL y control de versiones con Git.

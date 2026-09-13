@@ -1,4 +1,5 @@
 const pdfParse = require('pdf-parse');
+const { extractCVData } = require('../services/cvExtractor.service');
 
 const parseCV = async (req, res) => {
   try {
@@ -12,15 +13,16 @@ const parseCV = async (req, res) => {
       const pdfData = await pdfParse(req.file.buffer);
       extractedText = pdfData.text;
     } else {
-      // Soporte para archivos de texto plano (.txt / .md)
       extractedText = req.file.buffer.toString('utf-8');
     }
+
+    const structuredData = extractCVData(extractedText);
 
     return res.status(200).json({
       status: 'success',
       fileName: req.file.originalname,
-      textLength: extractedText.length,
-      previewText: extractedText.substring(0, 300)
+      extractedData: structuredData,
+      previewText: extractedText.substring(0, 200)
     });
   } catch (error) {
     return res.status(500).json({
