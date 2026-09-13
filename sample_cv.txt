@@ -1,0 +1,1 @@
+Juan Perez - Desarrollador Node.js con experiencia en Express, Docker y PostgreSQL.
