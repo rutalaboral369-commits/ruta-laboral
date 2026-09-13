@@ -1,13 +1,19 @@
 {
   "name": "ruta-laboral",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Plataforma automatizada de orientación laboral y optimización de CVs",
+  "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
 }
