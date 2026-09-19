@@ -5,7 +5,7 @@ const fs = require('fs');
 const pdfParse = require('pdf-parse');
 const mamut = require('mammoth');
 const { Ollama } = require('ollama');
-const { Document, Packer, Paragraph, TextRun, HeadingLevel } = require('docx');
+const { Document, Packer, Paragraph, TextRun, HeadingLevel, BorderStyle } = require('docx');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,31 +34,31 @@ const CV_OPTIONS = [
     id: 'executive',
     title: 'Ejecutivo / Directivo',
     description: 'Enfoque en liderazgo de equipos, visión estratégica, gestión de proyectos e impacto de negocio.',
-    promptInstruction: 'Reescribe el CV adoptando un tono directivo y de alto nivel. Reestructura el perfil y las experiencias enfatizando liderazgo de equipos, toma de decisiones estratégicas, alineación con objetivos de negocio (OKRs/KPIs), gestión de presupuestos o recursos, e impacto organizacional.'
+    promptInstruction: 'Reescribe el perfil profesional y adapta la redacción con un tono directivo y estratégico, sin alterar fechas, cargos ni datos reales del CV fuente.'
   },
   {
     id: 'technical',
     title: 'Técnico / Especialista',
     description: 'Énfasis detallado en arquitectura de software, stack tecnológico, herramientas y metodologías.',
-    promptInstruction: 'Reescribe el CV enfocándote en la profundidad técnica. Detalla arquitecturas, lenguajes, frameworks, herramientas de infraestructura, automatización, patrones de diseño y metodologías utilizadas en cada rol, resaltando la maestría técnica y resolución de problemas complejos.'
+    promptInstruction: 'Optimiza la redacción técnica destacando el stack y metodologías usadas, manteniendo intactas las fechas, empresas y cargos originales.'
   },
   {
     id: 'results',
     title: 'Orientado a Resultados y Métricas',
     description: 'Orientado a logros cuantitativos, métricas de desempeño, reducciones de tiempo y retorno de inversión.',
-    promptInstruction: 'Reescribe las descripciones de experiencia y perfil enfocado agresivamente en MÉTRICAS Y RESULTADOS. Inicia cada punto con verbos de alto impacto (ej: "Optimizó", "Aceleró", "Redujo") y destaca en **negrita** cada porcentaje, cifra monetaria, reducción de tiempo o logro medible.'
+    promptInstruction: 'Refuerza los logros existentes con un tono orientado a impacto y métricas, respetando estrictamente los datos, fechas y cargos del CV fuente sin inventar información.'
   },
   {
     id: 'ats',
     title: 'Moderno y Conciso (Optimizado para ATS)',
     description: 'Formato estructurado, sintácticamente impecable y limpio optimizado para algoritmos de filtrado automático.',
-    promptInstruction: 'Reescribe el CV para superar sistemas de seguimiento de candidatos (ATS). Utiliza frases cortas, directas y viñetas claras. Organiza las habilidades clave usando términos estandarizados de la industria y elimina redundancias o florituras.'
+    promptInstruction: 'Estructura el contenido de manera limpia, directa y profesional para superar filtros ATS, conservando rigurosamente fechas, nombres y cargos originales.'
   },
   {
     id: 'consultant',
     title: 'Consultoría / Asesoría',
     description: 'Enfoque en resolución de problemas complejos, consultoría cliente-proveedor, entregables y consultoría estratégica.',
-    promptInstruction: 'Reescribe el CV como el perfil de un Consultor Senior. Enfatiza la capacidad de diagnóstico, diseño de soluciones a la medida, gestión de partes interesadas (stakeholders), entregables clave y la transformación de procesos de negocio.'
+    promptInstruction: 'Adapta el tono hacia consultoría senior y gestión de soluciones, manteniendo estrictamente los datos, fechas y cargos originales del CV fuente.'
   }
 ];
 
@@ -136,16 +136,45 @@ app.post('/api/cv/rewrite', async (req, res) => {
       return res.status(400).json({ error: 'Opción no válida.' });
     }
 
-    const prompt = `Actúa como un experto consultor de carrera y redactor profesional de CVs.
-Reescribe en español el siguiente CV adaptando la redacción de forma marcada al enfoque: '${selectedOpt.title}'.
+    const prompt = `Actúa estrictamente como un motor de formateo y optimización de CVs. 
+Tu única tarea es reescribir y organizar el siguiente CV fuente en español.
 
-INSTRUCCIÓN ESPECÍFICA DE PERSONA:
+INSTRUCCIÓN DE ADAPTACIÓN:
 ${selectedOpt.promptInstruction}
 
-REGLAS DE FORMATO Y CONTENIDO (ESTRICTAS):
-- Basa TODA la información ÚNICAMENTE en el CV fuente. NO inventes enlaces, correos, sitios web ni datos que no existan en el texto original.
-- Mantiene exactamente UNA sola vez cada sección: CONTACTO, PERFIL PROFESIONAL, HABILIDADES TÉCNICAS, EXPERIENCIA PROFESIONAL, CERTIFICACIONES, EDUCACIÓN y PROYECTOS.
-- Genera la respuesta directamente en Markdown sin introducciones, saludos ni notas explicativas.
+REGLAS DE FIDELIDAD ABSOLUTA (ESTRICTAS):
+1. PROHIBIDO alterar fechas, periodos, nombres de empresas o cargos del CV fuente. Deben copiarse exactamente como aparecen en el original.
+2. PROHIBIDO inventar métricas, habilidades o logros que no estén explícitamente en el texto fuente.
+3. En HABILIDADES TÉCNICAS, lista únicamente las tecnologías y herramientas agrupadas por categoría (ej: Cloud, IaC, Lenguajes). No conviertas las habilidades en viñetas de logros.
+4. PROHIBIDO agregar notas conversacionales, comentarios o secciones de "NOTAS" al final del documento.
+5. Usa la siguiente estructura obligatoria en Markdown limpio (sin delimitadores \`\`\`):
+
+# Nombre Completo
+Correo | Teléfono | Ubicación | LinkedIn
+
+## PERFIL PROFESIONAL
+(Texto)
+
+## HABILIDADES TÉCNICAS
+- **Categoría:** Tecnologías y herramientas
+
+## EXPERIENCIA LABORAL
+### Puesto — Empresa
+Fechas | Ubicación
+- Logro 1
+
+## CERTIFICACIONES
+- Certificación
+
+## IDIOMAS
+- Idioma
+
+## EDUCACIÓN
+- Título | Institución | Años
+
+## PROYECTOS DESTACADOS
+### Nombre del Proyecto
+- Descripción
 
 CV FUENTE:
 """
@@ -158,21 +187,30 @@ ${rawText}
       stream: false
     });
 
+    let cleanedContent = (response.response || '').trim();
+    cleanedContent = cleanedContent.replace(/^```(?:markdown)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+    // Eliminar cualquier bloque parásito de notas o explicaciones que la IA agregue al final
+    const notesIndex = cleanedContent.search(/\n(#{1,3}\s*)?NOTAS?:?/i);
+    if (notesIndex !== -1) {
+      cleanedContent = cleanedContent.substring(0, notesIndex).trim();
+    }
+
     res.json({
       variant: {
         id: selectedOpt.id,
         title: selectedOpt.title,
         description: selectedOpt.description,
-        content: response.response.trim()
+        content: cleanedContent
       }
     });
 
   } catch (err) {
+    console.error("Error en /api/cv/rewrite:", err);
     res.status(500).json({ error: 'Error en generación con IA Local: ' + err.message });
   }
 });
 
-// Endpoint para generar un archivo .docx nativo y limpio
 app.post('/api/cv/download-docx', async (req, res) => {
   try {
     const { markdown } = req.body;
@@ -182,37 +220,46 @@ app.post('/api/cv/download-docx', async (req, res) => {
 
     const lines = markdown.split('\n');
     const docChildren = [];
+    let lastLine = '';
+    const seenSections = new Set();
 
     lines.forEach(line => {
       const trimmed = line.trim();
-      if (!trimmed) return;
+      if (!trimmed || trimmed.startsWith('```')) return;
+
+      if (trimmed.startsWith('## ') || trimmed.startsWith('# ')) {
+        const normalizedHeading = trimmed.toLowerCase();
+        if (seenSections.has(normalizedHeading)) return;
+        seenSections.add(normalizedHeading);
+      }
+
+      if (trimmed === lastLine && (trimmed.startsWith('- ') || trimmed.startsWith('* '))) return;
+      lastLine = trimmed;
 
       if (trimmed.startsWith('# ')) {
         docChildren.push(new Paragraph({
-          text: trimmed.replace('# ', ''),
-          heading: HeadingLevel.HEADING_1,
+          children: [new TextRun({ text: trimmed.replace('# ', '').toUpperCase(), bold: true, size: 36, color: "0F172A", font: "Arial" })],
           spacing: { after: 120 }
         }));
       } else if (trimmed.startsWith('## ')) {
         docChildren.push(new Paragraph({
-          text: trimmed.replace('## ', ''),
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 200, after: 100 }
+          children: [new TextRun({ text: trimmed.replace('## ', '').toUpperCase(), bold: true, size: 24, color: "1E3A8A", font: "Arial" })],
+          border: { bottom: { color: "2563EB", space: 4, value: BorderStyle.SINGLE, size: 12 } },
+          spacing: { before: 240, after: 120 }
         }));
       } else if (trimmed.startsWith('### ')) {
         docChildren.push(new Paragraph({
-          text: trimmed.replace('### ', ''),
-          heading: HeadingLevel.HEADING_3,
-          spacing: { before: 150, after: 80 }
+          children: [new TextRun({ text: trimmed.replace('### ', ''), bold: true, size: 22, color: "334155", font: "Arial" })],
+          spacing: { before: 160, after: 80 }
         }));
       } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-        const bulletText = trimmed.substring(2);
+        const bulletText = trimmed.replace(/^[-*]\s+/, '');
         const parts = bulletText.split(/(\*\*.*?\*\*)/g);
         const runs = parts.map(part => {
           if (part.startsWith('**') && part.endsWith('**')) {
-            return new TextRun({ text: part.slice(2, -2), bold: true });
+            return new TextRun({ text: part.slice(2, -2), bold: true, size: 20, font: "Arial", color: "0F172A" });
           }
-          return new TextRun({ text: part });
+          return new TextRun({ text: part, size: 20, font: "Arial", color: "334155" });
         });
         docChildren.push(new Paragraph({
           children: runs,
@@ -223,9 +270,9 @@ app.post('/api/cv/download-docx', async (req, res) => {
         const parts = trimmed.split(/(\*\*.*?\*\*)/g);
         const runs = parts.map(part => {
           if (part.startsWith('**') && part.endsWith('**')) {
-            return new TextRun({ text: part.slice(2, -2), bold: true });
+            return new TextRun({ text: part.slice(2, -2), bold: true, size: 20, font: "Arial", color: "0F172A" });
           }
-          return new TextRun({ text: part });
+          return new TextRun({ text: part, size: 20, font: "Arial", color: "334155" });
         });
         docChildren.push(new Paragraph({
           children: runs,
@@ -236,14 +283,14 @@ app.post('/api/cv/download-docx', async (req, res) => {
 
     const doc = new Document({
       sections: [{
-        properties: {},
+        properties: { page: { margin: { top: 720, bottom: 720, left: 720, right: 720 } } },
         children: docChildren
       }]
     });
 
     const buffer = await Packer.toBuffer(doc);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', 'attachment; filename=CV_Optimizado.docx');
+    res.setHeader('Content-Disposition', 'attachment; filename=CV_Profesional.docx');
     res.send(buffer);
 
   } catch (err) {
