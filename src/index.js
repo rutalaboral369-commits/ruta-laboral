@@ -17,34 +17,46 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 const upload = multer({ dest: 'uploads/' });
 
+async function extractTextFromPDF(dataBuffer) {
+  if (typeof pdfParse === 'function') {
+    return await pdfParse(dataBuffer);
+  } else if (pdfParse && typeof pdfParse.default === 'function') {
+    return await pdfParse.default(dataBuffer);
+  } else {
+    // Si la librería requiere instanciación o invocación directa:
+    const parse = require('pdf-parse');
+    return await parse(dataBuffer);
+  }
+}
+
 const CV_OPTIONS = [
-  { 
-    id: 'executive', 
-    title: 'Ejecutivo / Directivo', 
+  {
+    id: 'executive',
+    title: 'Ejecutivo / Directivo',
     description: 'Enfoque en liderazgo de equipos, visión estratégica, gestión de proyectos e impacto de negocio.',
     promptInstruction: 'Reescribe el CV adoptando un tono directivo y de alto nivel. Reestructura el perfil y las experiencias enfatizando liderazgo de equipos, toma de decisiones estratégicas, alineación con objetivos de negocio (OKRs/KPIs), gestión de presupuestos o recursos, e impacto organizacional.'
   },
-  { 
-    id: 'technical', 
-    title: 'Técnico / Especialista', 
+  {
+    id: 'technical',
+    title: 'Técnico / Especialista',
     description: 'Énfasis detallado en arquitectura de software, stack tecnológico, herramientas y metodologías.',
     promptInstruction: 'Reescribe el CV enfocándote en la profundidad técnica. Detalla arquitecturas, lenguajes, frameworks, herramientas de infraestructura, automatización, patrones de diseño y metodologías utilizadas en cada rol, resaltando la maestría técnica y resolución de problemas complejos.'
   },
-  { 
-    id: 'results', 
-    title: 'Orientado a Resultados y Métricas', 
+  {
+    id: 'results',
+    title: 'Orientado a Resultados y Métricas',
     description: 'Orientado a logros cuantitativos, métricas de desempeño, reducciones de tiempo y retorno de inversión.',
     promptInstruction: 'Reescribe las descripciones de experiencia y perfil enfocado agresivamente en MÉTRICAS Y RESULTADOS. Inicia cada punto con verbos de alto impacto (ej: "Optimizó", "Aceleró", "Redujo") y destaca en **negrita** cada porcentaje, cifra monetaria, reducción de tiempo o logro medible.'
   },
-  { 
-    id: 'ats', 
-    title: 'Moderno y Conciso (Optimizado para ATS)', 
+  {
+    id: 'ats',
+    title: 'Moderno y Conciso (Optimizado para ATS)',
     description: 'Formato estructurado, sintácticamente impecable y limpio optimizado para algoritmos de filtrado automático.',
     promptInstruction: 'Reescribe el CV para superar sistemas de seguimiento de candidatos (ATS). Utiliza frases cortas, directas y viñetas claras. Organiza las habilidades clave usando términos estandarizados de la industria y elimina redundancias o florituras.'
   },
-  { 
-    id: 'consultant', 
-    title: 'Consultoría / Asesoría', 
+  {
+    id: 'consultant',
+    title: 'Consultoría / Asesoría',
     description: 'Enfoque en resolución de problemas complejos, consultoría cliente-proveedor, entregables y consultoría estratégica.',
     promptInstruction: 'Reescribe el CV como el perfil de un Consultor Senior. Enfatiza la capacidad de diagnóstico, diseño de soluciones a la medida, gestión de partes interesadas (stakeholders), entregables clave y la transformación de procesos de negocio.'
   }
@@ -62,16 +74,23 @@ app.post('/api/cv/upload', upload.single('cv'), async (req, res) => {
 
     const filePath = req.file.path;
     const ext = path.extname(req.file.originalname).toLowerCase();
+    const allowedExtensions = ['.pdf', '.docx', '.txt'];
+
+    if (!allowedExtensions.includes(ext)) {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      return res.status(400).json({ error: 'Formato de archivo no permitido. Solo se aceptan archivos PDF (.pdf), Word (.docx) y Texto (.txt).' });
+    }
+
     let text = '';
 
     if (ext === '.pdf') {
       const dataBuffer = fs.readFileSync(filePath);
-      const pdfData = await pdfParse(dataBuffer);
-      text = pdfData.text;
+      const pdfData = await extractTextFromPDF(dataBuffer);
+      text = pdfData.text || '';
     } else if (ext === '.docx') {
       const result = await mamut.extractRawText({ path: filePath });
-      text = result.value;
-    } else {
+      text = result.value || '';
+    } else if (ext === '.txt') {
       text = fs.readFileSync(filePath, 'utf8');
     }
 
@@ -79,9 +98,13 @@ app.post('/api/cv/upload', upload.single('cv'), async (req, res) => {
       fs.unlinkSync(filePath);
     }
 
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({ error: 'No se pudo extraer texto del archivo proporcionado.' });
+    }
+
     const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
     const phoneMatch = text.match(/(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
-    
+
     const commonSkills = ['Node.js', 'Express', 'Docker', 'AWS', 'Python', 'React', 'JavaScript', 'SQL', 'Git', 'TypeScript', 'Java', 'Linux', 'Kubernetes', 'CI/CD'];
     const detectedSkills = commonSkills.filter(s => new RegExp(`\\b${s}\\b`, 'i').test(text));
 
@@ -115,7 +138,7 @@ app.post('/api/cv/match', (req, res) => {
     const missing = [];
 
     requiredSkills.forEach(reqSkill => {
-      const isPresent = candidateSkills.some(cSkill => 
+      const isPresent = candidateSkills.some(cSkill =>
         cSkill.toLowerCase().trim() === reqSkill.toLowerCase().trim()
       );
       if (isPresent) {
@@ -153,7 +176,7 @@ app.post('/api/cv/rewrite', async (req, res) => {
       return res.status(400).json({ error: 'Opción no válida.' });
     }
 
-    const prompt = `Actúa como un experto consultor de carrera y redactor profesional de CVs. 
+    const prompt = `Actúa como un experto consultor de carrera y redactor profesional de CVs.
 Reescribe en español el siguiente CV adaptando la redacción de forma marcada al enfoque: '${selectedOpt.title}'.
 
 INSTRUCCIÓN ESPECÍFICA DE PERSONA:

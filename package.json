@@ -17,7 +17,7 @@
     "mammoth": "^1.12.3",
     "multer": "^2.3.0",
     "ollama": "^0.6.3",
-    "pdf-parse": "^2.4.5",
+    "pdf-parse": "^1.1.1",
     "pdf2json": "^4.1.0"
   },
   "devDependencies": {

@@ -11,7 +11,6 @@
     .card { border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: none; }
     #cvResult { background: #ffffff; padding: 25px; border-radius: 8px; border: 1px solid #dee2e6; min-height: 200px; }
     
-    /* Estilos personalizados para las tarjetas de opción */
     .option-btn {
       border: 1px solid #cbd5e1;
       background-color: #ffffff;
@@ -44,8 +43,11 @@
         <div class="card p-4 mb-4">
           <h5 class="card-title fw-bold mb-3">1. Cargar Curriculum Vitae</h5>
           <form id="uploadForm">
-            <div class="mb-3">
+            <div class="mb-2">
               <input class="form-control" type="file" id="cvFile" accept=".pdf,.docx,.txt" required>
+            </div>
+            <div class="form-text text-muted mb-3 fs-7">
+              📋 <strong>Formatos soportados:</strong> PDF (<code>.pdf</code>), Word (<code>.docx</code>) y Texto plano (<code>.txt</code>).
             </div>
             <button type="submit" class="btn btn-primary w-100" id="btnUpload">Procesar Archivo</button>
           </form>
