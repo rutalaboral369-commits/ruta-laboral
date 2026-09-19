@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Optimizador de CVs - Ruta Laboral</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .card { border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: none; }
+    #cvResult { background: #ffffff; padding: 25px; border-radius: 8px; border: 1px solid #dee2e6; min-height: 200px; }
+    
+    /* Estilos personalizados para las tarjetas de opción */
+    .option-btn {
+      border: 1px solid #cbd5e1;
+      background-color: #ffffff;
+      color: #1e293b;
+      transition: all 0.2s ease-in-out;
+    }
+    .option-btn:hover {
+      border-color: #0d6efd;
+      background-color: #f0f7ff;
+      color: #0b5ed7;
+      transform: translateY(-1px);
+    }
+    .option-btn small {
+      color: #64748b;
+    }
+    .option-btn:hover small {
+      color: #3b82f6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container py-5">
+    <header class="text-center mb-5">
+      <h1 class="fw-bold text-primary">Optimizador Profesional de CVs</h1>
+      <p class="text-muted">Procesamiento local, seguro e instantáneo impulsado por IA</p>
+    </header>
+
+    <div class="row g-4">
+      <div class="col-md-5">
+        <div class="card p-4 mb-4">
+          <h5 class="card-title fw-bold mb-3">1. Cargar Curriculum Vitae</h5>
+          <form id="uploadForm">
+            <div class="mb-3">
+              <input class="form-control" type="file" id="cvFile" accept=".pdf,.docx,.txt" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-100" id="btnUpload">Procesar Archivo</button>
+          </form>
+        </div>
+
+        <div class="card p-4 d-none" id="optionsCard">
+          <h5 class="card-title fw-bold mb-3">2. Seleccionar Enfoque / Persona</h5>
+          <div id="optionsList" class="d-grid gap-2"></div>
+        </div>
+      </div>
+
+      <div class="col-md-7">
+        <div class="card p-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="card-title fw-bold m-0">3. Resultado Optimizado</h5>
+            <div id="actionButtons" class="d-none">
+              <button class="btn btn-outline-secondary btn-sm me-2" id="btnCopy">📋 Copiar Texto</button>
+              <button class="btn btn-outline-primary btn-sm" id="btnDownload">💾 Descargar (.md)</button>
+            </div>
+          </div>
+          <div id="loadingSpinner" class="text-center py-5 d-none">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Generando versión optimizada con Qwen 2.5...</p>
+          </div>
+          <div id="cvResult" class="text-muted">Sube un archivo y elige un enfoque para ver el resultado reescrito aquí.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let rawExtractedText = '';
+    let currentGeneratedMarkdown = '';
+
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fileInput = document.getElementById('cvFile');
+      if (!fileInput.files[0]) return;
+
+      const formData = new FormData();
+      formData.append('cv', fileInput.files[0]);
+
+      const btn = document.getElementById('btnUpload');
+      btn.disabled = true;
+      btn.innerText = 'Procesando...';
+
+      try {
+        const res = await fetch('/api/cv/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (data.success) {
+          rawExtractedText = data.extractedData.rawText;
+          await loadOptions();
+        } else {
+          alert(data.error || 'Error al procesar el archivo');
+        }
+      } catch (err) {
+        alert('Error de conexión con el servidor');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Procesar Archivo';
+      }
+    });
+
+    async function loadOptions() {
+      try {
+        const res = await fetch('/api/cv/options');
+        const data = await res.json();
+        const container = document.getElementById('optionsList');
+        container.innerHTML = '';
+
+        data.options.forEach(opt => {
+          const btn = document.createElement('button');
+          btn.className = 'btn option-btn text-start p-3';
+          btn.innerHTML = `<strong>${opt.title}</strong><br><small>${opt.description}</small>`;
+          btn.onclick = () => rewriteCV(opt.id);
+          container.appendChild(btn);
+        });
+
+        document.getElementById('optionsCard').classList.remove('d-none');
+      } catch (err) {
+        alert('Error al cargar opciones');
+      }
+    }
+
+    async function rewriteCV(optionId) {
+      if (!rawExtractedText) return;
+
+      const spinner = document.getElementById('loadingSpinner');
+      const resultDiv = document.getElementById('cvResult');
+      const actionBtns = document.getElementById('actionButtons');
+
+      spinner.classList.remove('d-none');
+      resultDiv.classList.add('d-none');
+      actionBtns.classList.add('d-none');
+
+      try {
+        const res = await fetch('/api/cv/rewrite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rawText: rawExtractedText, optionId })
+        });
+
+        const data = await res.json();
+
+        if (data.variant) {
+          currentGeneratedMarkdown = data.variant.content;
+          resultDiv.innerHTML = marked.parse(currentGeneratedMarkdown);
+          actionBtns.classList.remove('d-none');
+        } else {
+          resultDiv.innerText = 'Error: ' + (data.error || 'No se pudo generar');
+        }
+      } catch (err) {
+        resultDiv.innerText = 'Error de conexión con el modelo local.';
+      } finally {
+        spinner.classList.add('d-none');
+        resultDiv.classList.remove('d-none');
+      }
+    }
+
+    document.getElementById('btnCopy').addEventListener('click', () => {
+      if (!currentGeneratedMarkdown) return;
+      navigator.clipboard.writeText(currentGeneratedMarkdown).then(() => {
+        const btn = document.getElementById('btnCopy');
+        btn.innerText = '✅ ¡Copiado!';
+        setTimeout(() => { btn.innerText = '📋 Copiar Texto'; }, 2000);
+      });
+    });
+
+    document.getElementById('btnDownload').addEventListener('click', () => {
+      if (!currentGeneratedMarkdown) return;
+      const blob = new Blob([currentGeneratedMarkdown], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'CV_Optimizado.md';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  </script>
+</body>
+</html>

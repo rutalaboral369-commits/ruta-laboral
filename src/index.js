@@ -1,22 +1,198 @@
 const express = require('express');
-const cvRoutes = require('./routes/cv.routes');
+const path = require('path');
+const multer = require('multer');
+const fs = require('fs');
+const pdfParse = require('pdf-parse');
+const mamut = require('mammoth');
+const { Ollama } = require('ollama');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+const ollama = new Ollama({ host: 'http://127.0.0.1:11434' });
 
-app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    status: 'OK',
-    message: 'Ruta Laboral API funcionando con Express',
-    hotReload: true,
-    timestamp: new Date().toISOString()
-  });
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, '../public')));
+
+const upload = multer({ dest: 'uploads/' });
+
+const CV_OPTIONS = [
+  { 
+    id: 'executive', 
+    title: 'Ejecutivo / Directivo', 
+    description: 'Enfoque en liderazgo de equipos, visión estratégica, gestión de proyectos e impacto de negocio.',
+    promptInstruction: 'Reescribe el CV adoptando un tono directivo y de alto nivel. Reestructura el perfil y las experiencias enfatizando liderazgo de equipos, toma de decisiones estratégicas, alineación con objetivos de negocio (OKRs/KPIs), gestión de presupuestos o recursos, e impacto organizacional.'
+  },
+  { 
+    id: 'technical', 
+    title: 'Técnico / Especialista', 
+    description: 'Énfasis detallado en arquitectura de software, stack tecnológico, herramientas y metodologías.',
+    promptInstruction: 'Reescribe el CV enfocándote en la profundidad técnica. Detalla arquitecturas, lenguajes, frameworks, herramientas de infraestructura, automatización, patrones de diseño y metodologías utilizadas en cada rol, resaltando la maestría técnica y resolución de problemas complejos.'
+  },
+  { 
+    id: 'results', 
+    title: 'Orientado a Resultados y Métricas', 
+    description: 'Orientado a logros cuantitativos, métricas de desempeño, reducciones de tiempo y retorno de inversión.',
+    promptInstruction: 'Reescribe las descripciones de experiencia y perfil enfocado agresivamente en MÉTRICAS Y RESULTADOS. Inicia cada punto con verbos de alto impacto (ej: "Optimizó", "Aceleró", "Redujo") y destaca en **negrita** cada porcentaje, cifra monetaria, reducción de tiempo o logro medible.'
+  },
+  { 
+    id: 'ats', 
+    title: 'Moderno y Conciso (Optimizado para ATS)', 
+    description: 'Formato estructurado, sintácticamente impecable y limpio optimizado para algoritmos de filtrado automático.',
+    promptInstruction: 'Reescribe el CV para superar sistemas de seguimiento de candidatos (ATS). Utiliza frases cortas, directas y viñetas claras. Organiza las habilidades clave usando términos estandarizados de la industria y elimina redundancias o florituras.'
+  },
+  { 
+    id: 'consultant', 
+    title: 'Consultoría / Asesoría', 
+    description: 'Enfoque en resolución de problemas complejos, consultoría cliente-proveedor, entregables y consultoría estratégica.',
+    promptInstruction: 'Reescribe el CV como el perfil de un Consultor Senior. Enfatiza la capacidad de diagnóstico, diseño de soluciones a la medida, gestión de partes interesadas (stakeholders), entregables clave y la transformación de procesos de negocio.'
+  }
+];
+
+app.get('/api/cv/options', (req, res) => {
+  res.json({ options: CV_OPTIONS });
 });
 
-app.use('/api/cv', cvRoutes);
+app.post('/api/cv/upload', upload.single('cv'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se subió ningún archivo.' });
+    }
+
+    const filePath = req.file.path;
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    let text = '';
+
+    if (ext === '.pdf') {
+      const dataBuffer = fs.readFileSync(filePath);
+      const pdfData = await pdfParse(dataBuffer);
+      text = pdfData.text;
+    } else if (ext === '.docx') {
+      const result = await mamut.extractRawText({ path: filePath });
+      text = result.value;
+    } else {
+      text = fs.readFileSync(filePath, 'utf8');
+    }
+
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    const phoneMatch = text.match(/(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
+    
+    const commonSkills = ['Node.js', 'Express', 'Docker', 'AWS', 'Python', 'React', 'JavaScript', 'SQL', 'Git', 'TypeScript', 'Java', 'Linux', 'Kubernetes', 'CI/CD'];
+    const detectedSkills = commonSkills.filter(s => new RegExp(`\\b${s}\\b`, 'i').test(text));
+
+    res.json({
+      success: true,
+      extractedData: {
+        rawText: text,
+        email: emailMatch ? emailMatch[0] : null,
+        phone: phoneMatch ? phoneMatch[0] : null,
+        skills: detectedSkills
+      }
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: 'Error al procesar el archivo CV: ' + err.message });
+  }
+});
+
+app.post('/api/cv/match', (req, res) => {
+  try {
+    let { candidateSkills = [], requiredSkills = [] } = req.body || {};
+
+    if (typeof candidateSkills === 'string') {
+      candidateSkills = candidateSkills.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    if (typeof requiredSkills === 'string') {
+      requiredSkills = requiredSkills.split(',').map(s => s.trim()).filter(Boolean);
+    }
+
+    const matched = [];
+    const missing = [];
+
+    requiredSkills.forEach(reqSkill => {
+      const isPresent = candidateSkills.some(cSkill => 
+        cSkill.toLowerCase().trim() === reqSkill.toLowerCase().trim()
+      );
+      if (isPresent) {
+        matched.push(reqSkill);
+      } else {
+        missing.push(reqSkill);
+      }
+    });
+
+    const total = requiredSkills.length;
+    const score = total > 0 ? Math.round((matched.length / total) * 100) : 0;
+
+    res.json({
+      result: {
+        matchScore: `${score}%`,
+        matchedSkills: matched,
+        missingSkills: missing
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Error en cálculo de compatibilidad: ' + err.message });
+  }
+});
+
+app.post('/api/cv/rewrite', async (req, res) => {
+  try {
+    const { rawText, optionId } = req.body;
+
+    if (!rawText || !optionId) {
+      return res.status(400).json({ error: 'Texto base u opción no proporcionados.' });
+    }
+
+    const selectedOpt = CV_OPTIONS.find(o => o.id === optionId);
+    if (!selectedOpt) {
+      return res.status(400).json({ error: 'Opción no válida.' });
+    }
+
+    const prompt = `Actúa como un experto consultor de carrera y redactor profesional de CVs. 
+Reescribe en español el siguiente CV adaptando la redacción de forma marcada al enfoque: '${selectedOpt.title}'.
+
+INSTRUCCIÓN ESPECÍFICA DE PERSONA:
+${selectedOpt.promptInstruction}
+
+REGLAS DE FORMATO Y CONTENIDO (ESTRICTAS):
+- Basa TODA la información ÚNICAMENTE en el CV fuente. NO inventes enlaces, correos, sitios web ni datos que no existan en el texto original.
+- Mantiene exactamente UNA sola vez cada sección: CONTACTO, PERFIL PROFESIONAL, HABILIDADES TÉCNICAS, EXPERIENCIA PROFESIONAL, CERTIFICACIONES, EDUCACIÓN y PROYECTOS.
+- Genera la respuesta directamente en Markdown sin introducciones, saludos ni notas explicativas.
+
+CV FUENTE:
+"""
+${rawText}
+"""`;
+
+    const response = await ollama.generate({
+      model: 'qwen2.5:1.5b',
+      prompt: prompt,
+      stream: false
+    });
+
+    res.json({
+      variant: {
+        id: selectedOpt.id,
+        title: selectedOpt.title,
+        description: selectedOpt.description,
+        content: response.response.trim()
+      }
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: 'Error en generación con IA Local: ' + err.message });
+  }
+});
+
+app.use((req, res) => {
+  res.status(404).json({ error: `Ruta no encontrada: ${req.method} ${req.url}` });
+});
 
 app.listen(PORT, () => {
-  console.log(`Servidor Express corriendo en puerto ${PORT}`);
+  console.log(`Servidor activo en http://localhost:${PORT}`);
 });
