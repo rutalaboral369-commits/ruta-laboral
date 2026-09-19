@@ -5,6 +5,7 @@ const fs = require('fs');
 const pdfParse = require('pdf-parse');
 const mamut = require('mammoth');
 const { Ollama } = require('ollama');
+const { Document, Packer, Paragraph, TextRun, HeadingLevel } = require('docx');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,7 +24,6 @@ async function extractTextFromPDF(dataBuffer) {
   } else if (pdfParse && typeof pdfParse.default === 'function') {
     return await pdfParse.default(dataBuffer);
   } else {
-    // Si la librería requiere instanciación o invocación directa:
     const parse = require('pdf-parse');
     return await parse(dataBuffer);
   }
@@ -123,46 +123,6 @@ app.post('/api/cv/upload', upload.single('cv'), async (req, res) => {
   }
 });
 
-app.post('/api/cv/match', (req, res) => {
-  try {
-    let { candidateSkills = [], requiredSkills = [] } = req.body || {};
-
-    if (typeof candidateSkills === 'string') {
-      candidateSkills = candidateSkills.split(',').map(s => s.trim()).filter(Boolean);
-    }
-    if (typeof requiredSkills === 'string') {
-      requiredSkills = requiredSkills.split(',').map(s => s.trim()).filter(Boolean);
-    }
-
-    const matched = [];
-    const missing = [];
-
-    requiredSkills.forEach(reqSkill => {
-      const isPresent = candidateSkills.some(cSkill =>
-        cSkill.toLowerCase().trim() === reqSkill.toLowerCase().trim()
-      );
-      if (isPresent) {
-        matched.push(reqSkill);
-      } else {
-        missing.push(reqSkill);
-      }
-    });
-
-    const total = requiredSkills.length;
-    const score = total > 0 ? Math.round((matched.length / total) * 100) : 0;
-
-    res.json({
-      result: {
-        matchScore: `${score}%`,
-        matchedSkills: matched,
-        missingSkills: missing
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Error en cálculo de compatibilidad: ' + err.message });
-  }
-});
-
 app.post('/api/cv/rewrite', async (req, res) => {
   try {
     const { rawText, optionId } = req.body;
@@ -209,6 +169,85 @@ ${rawText}
 
   } catch (err) {
     res.status(500).json({ error: 'Error en generación con IA Local: ' + err.message });
+  }
+});
+
+// Endpoint para generar un archivo .docx nativo y limpio
+app.post('/api/cv/download-docx', async (req, res) => {
+  try {
+    const { markdown } = req.body;
+    if (!markdown) {
+      return res.status(400).json({ error: 'No se proporcionó texto en markdown.' });
+    }
+
+    const lines = markdown.split('\n');
+    const docChildren = [];
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      if (trimmed.startsWith('# ')) {
+        docChildren.push(new Paragraph({
+          text: trimmed.replace('# ', ''),
+          heading: HeadingLevel.HEADING_1,
+          spacing: { after: 120 }
+        }));
+      } else if (trimmed.startsWith('## ')) {
+        docChildren.push(new Paragraph({
+          text: trimmed.replace('## ', ''),
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 200, after: 100 }
+        }));
+      } else if (trimmed.startsWith('### ')) {
+        docChildren.push(new Paragraph({
+          text: trimmed.replace('### ', ''),
+          heading: HeadingLevel.HEADING_3,
+          spacing: { before: 150, after: 80 }
+        }));
+      } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        const bulletText = trimmed.substring(2);
+        const parts = bulletText.split(/(\*\*.*?\*\*)/g);
+        const runs = parts.map(part => {
+          if (part.startsWith('**') && part.endsWith('**')) {
+            return new TextRun({ text: part.slice(2, -2), bold: true });
+          }
+          return new TextRun({ text: part });
+        });
+        docChildren.push(new Paragraph({
+          children: runs,
+          bullet: { level: 0 },
+          spacing: { after: 60 }
+        }));
+      } else {
+        const parts = trimmed.split(/(\*\*.*?\*\*)/g);
+        const runs = parts.map(part => {
+          if (part.startsWith('**') && part.endsWith('**')) {
+            return new TextRun({ text: part.slice(2, -2), bold: true });
+          }
+          return new TextRun({ text: part });
+        });
+        docChildren.push(new Paragraph({
+          children: runs,
+          spacing: { after: 100 }
+        }));
+      }
+    });
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: docChildren
+      }]
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', 'attachment; filename=CV_Optimizado.docx');
+    res.send(buffer);
+
+  } catch (err) {
+    res.status(500).json({ error: 'Error al generar Word: ' + err.message });
   }
 });
 

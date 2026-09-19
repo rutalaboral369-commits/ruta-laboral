@@ -13,6 +13,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "cors": "^2.8.6",
+    "docx": "^9.7.1",
     "express": "^4.19.2",
     "mammoth": "^1.12.3",
     "multer": "^2.3.0",
