@@ -147,8 +147,9 @@ REGLAS DE FIDELIDAD ABSOLUTA (ESTRICTAS):
 2. PROHIBIDO inventar métricas, habilidades o logros que no estén explícitamente en el texto fuente.
 3. En HABILIDADES TÉCNICAS, lista únicamente las tecnologías y herramientas agrupadas por categoría (ej: Cloud, IaC, Lenguajes). No conviertas las habilidades en viñetas de logros.
 4. PROHIBIDO agregar notas conversacionales, comentarios o secciones de "NOTAS" al final del documento.
-5. Usa la siguiente estructura obligatoria en Markdown limpio (sin delimitadores \`\`\`):
+5. Devuelve EXCLUSIVAMENTE el contenido en Markdown limpio, SIN incluir la palabra "md" al inicio ni delimitadores \`\`\`.
 
+ESTRUCTURA OBLIGATORIA:
 # Nombre Completo
 Correo | Teléfono | Ubicación | LinkedIn
 
@@ -189,8 +190,12 @@ ${rawText}
 
     let cleanedContent = (response.response || '').trim();
     cleanedContent = cleanedContent.replace(/^```(?:markdown)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    if (cleanedContent.toLowerCase().startsWith('md\n')) {
+      cleanedContent = cleanedContent.substring(3).trim();
+    } else if (cleanedContent.toLowerCase().startsWith('md\r\n')) {
+      cleanedContent = cleanedContent.substring(4).trim();
+    }
 
-    // Eliminar cualquier bloque parásito de notas o explicaciones que la IA agregue al final
     const notesIndex = cleanedContent.search(/\n(#{1,3}\s*)?NOTAS?:?/i);
     if (notesIndex !== -1) {
       cleanedContent = cleanedContent.substring(0, notesIndex).trim();
@@ -211,12 +216,15 @@ ${rawText}
   }
 });
 
+// Endpoint de descarga de Word (.docx)
 app.post('/api/cv/download-docx', async (req, res) => {
   try {
-    const { markdown } = req.body;
+    let { markdown } = req.body;
     if (!markdown) {
       return res.status(400).json({ error: 'No se proporcionó texto en markdown.' });
     }
+
+    if (markdown.toLowerCase().startsWith('md\n')) markdown = markdown.substring(3);
 
     const lines = markdown.split('\n');
     const docChildren = [];
